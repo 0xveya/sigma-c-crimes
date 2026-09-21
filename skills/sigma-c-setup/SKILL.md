@@ -1,75 +1,73 @@
 ---
 name: sigma-c-setup
-description: Create a C23 project that uses the Sigma C ecosystem with Xmake, mise, explicit ownership and allocator contracts, and the correct hosted, freestanding, or 42 constraints. Use when starting or scaffolding a new Sigma C project.
+description: Set up a Sigma-style C23 repository with Xmake targets and packages, mise tasks, and Clang tooling. Use when starting or standardizing one of Veya's C repositories; not for a strict 42 hand-in unless the subject permits this tooling.
 ---
 
 # Sigma C setup
 
-## Establish the boundary
+Read the target and relevant sibling Sigma repositories first. Match their
+current package declarations and keep only files the first target uses.
 
-Before creating files, inspect the target repository and relevant sibling Sigma
-libraries. Determine:
+## Base
 
-- whether the output is a library or executable
-- whether it is hosted, freestanding, or restricted by a 42 subject
-- the target platforms and toolchain
-- the allowed functions when a subject constrains them
-- which Sigma layers provide contracts the project actually needs
+Use `src/`, `include/` for public library headers, and `tests/` when tests exist.
+Add `xmake.lua`, `mise.toml`, `.gitignore`, and `.clang-format` containing
+`Standard: Latest`. Ignore `.xmake/`, `build/`, `compile_commands.json`, object
+files, produced binaries, swap files, and generated diagnostic files.
 
-Prefer the repository's existing conventions. For a new project, use C23,
-Clang, Xmake, and mise unless its environment requires something else.
+Start Xmake with:
 
-## Select the stack
+```lua
+set_project("<name>")
+set_version("0.1.0")
+set_languages("c23")
+set_toolchains("clang")
+set_toolset("ld", "clang")
+add_rules("mode.debug", "mode.release")
+add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
+```
 
-Add only concrete dependencies:
+Factor shared target settings into `configure(target_name)`. Use warnings
+`all`, `extra`, and `pedantic`, plus `-Wshadow`, `-Wconversion`,
+`-Wdouble-promotion`, `-Wformat=2`, and `-Wundef`. Add freestanding flags only
+for a real freestanding boundary.
 
-- `sigma_malloc` for allocator interfaces, arenas, allocation strategies, or
-  allocation diagnostics
-- `sigma_libft` for bounded values, ownership helpers, generated collections,
-  traits, formatting, Unicode, readers, memory operations, or typed syscalls
-- `sigma_rt` for startup and runtime services
+Static libraries use public include directories, `add_headerfiles`, and
+`add_files`. Test binaries are non-default, depend on the library, and register
+focused cases with `add_tests` rather than adding another test framework.
 
-Treat generic `Result` and `Option` in `sigma_libft`, and async/await in
-`sigma_rt`, as roadmap items until those repositories expose working public
-contracts. Do not copy speculative versions into each new project.
+Declare Sigma dependencies as GitHub-backed Xmake packages. Pin an existing
+release with `add_requires(..., {system = false})`; copy install options from a
+working consumer. Mark packages public only when their types appear in public
+headers. Add only the needed layer: `sigma_malloc`, `sigma_libft`, or `sigma_rt`.
 
-When a package is not published through a registry, follow the dependency
-pattern already used by the relevant Sigma repository. Do not invent a package
-URL, version, or installation command.
+## Mise
 
-## Preserve the contracts
+Pin Clang, Xmake, and clang-format. Add other tools only when a task uses them.
+Provide these tasks with short literal descriptions:
 
-- Use borrowed views by default and make ownership transfer explicit.
-- Give every owning value a documented zero state that is safe to destroy.
-- Use `SIGMA_MOVE`, clone, deinit, and allocator-aware APIs according to the
-  owning type's contract. Ordinary C assignment is not a move.
-- Pass allocators into code that allocates. Do not hide allocation in a helper
-  with a borrowed-looking API.
-- Represent expected absence and reportable failure with the strongest typed
-  contract currently available. Do not collapse either into an undocumented
-  sentinel.
-- Keep libc and platform access behind one narrow boundary so hosted,
-  freestanding, and allowed-functions implementations remain replaceable.
-- Keep blocking operations visible. Do not create a project-local async macro
-  system while the shared runtime contract is unfinished.
-- Use metaprogramming where it enforces a contract or generates repetitive
-  type-safe code, not merely to shorten ordinary control flow.
+```toml
+[tasks.build]
+run = "xmake f -m release -y && xmake -y"
 
-## Project shape
+[tasks.dev]
+run = "xmake f -m debug -y && xmake -y"
 
-Keep the project as small as its deliverable permits. A typical new library has
-public headers under `include/`, implementation under `src/`, focused behavior
-tests under `tests/`, `xmake.lua`, and `mise.toml`. Do not create unused
-directories or placeholder subsystems.
+[tasks.test]
+run = "xmake test -vD"
 
-Expose one obvious mise task for each operation the project actually supports,
-such as formatting, a debug build, a release build, and focused tests. Keep the
-underlying Xmake failure visible.
+[tasks.compiledb]
+run = "xmake project -k compile_commands ."
+
+[tasks.clean]
+run = "xmake clean -a && rm -rf build compile_commands.json"
+```
+
+Add `format` over the repository's actual C and header paths. Add `run`,
+`check`, stress, diagnostics, or generation tasks only when they execute real
+repository behavior.
 
 ## Verify
 
-Run the narrowest checks that exercise the created project through its real
-toolchain. At minimum, format the touched C and headers, build the requested
-target, and run its focused behavior test when one exists. For restricted
-projects, also verify the real allowed-functions or freestanding configuration;
-a normal hosted build is not a substitute.
+Run `mise run format`, `mise run dev`, and the narrowest relevant test. Run the
+release build when its flags or linkage differ. Keep Xmake failures visible.
